@@ -31,6 +31,8 @@ import {aliveGoWasmWorkerRemotePromise, getAuthPublicKeyType, sshPrivateKeyIsEnc
 import {fragmentParams} from "@/fragment-params";
 import CopyToClipboardButton from "@/components/CopyToClipboardButton.vue";
 import {getServerHostCommand} from "@/getServerHostCommand";
+import {supportsRequestStreamsPromise} from "@/supportsRequestStreamsPromise";
+import {createChunkedUploadWritable} from "@/chunked-upload";
 import {showPrompt} from "@/components/Globals/prompt/global-prompt";
 import {showSnackbar} from "@/components/Globals/snackbar/global-snackbar";
 
@@ -132,26 +134,49 @@ async function start() {
     fitAddon.fit();
   }
 
-  const {readable: sendReadable, writable: sendWritable} = new TransformStream();
+  const {readable: sendReadable, writable: sendWritable} = new TransformStream<Uint8Array>();
   const csUrl = urlJoin(props.pipingServerUrl, props.csPath);
   const scUrl = urlJoin(props.pipingServerUrl, props.scPath);
   const pipingServerHeaders = new Headers(props.pipingServerHeaders);
-  // TODO: retry connection
-  fetch(csUrl, {
-    method: "POST",
-    headers: pipingServerHeaders,
-    body: sendReadable,
-    duplex: 'half',
-  } as any).then(postRes => {
-    console.log("postRes", postRes);
-  });
+
+  // Detect if this browser supports fetch() with ReadableStream body.
+  // Safari does not support streaming upload; use chunked POST fallback in that case.
+  const streamingSupported = await supportsRequestStreamsPromise;
+  let uploadWritable: WritableStream<Uint8Array>;
+
+  if (streamingSupported) {
+    // Chrome / Edge: stream keyboard data directly as one persistent POST
+    uploadWritable = sendWritable;
+    // TODO: retry connection
+    fetch(csUrl, {
+      method: "POST",
+      headers: pipingServerHeaders,
+      body: sendReadable,
+      duplex: 'half',
+    } as any).then(postRes => {
+      console.log("postRes", postRes);
+    });
+  } else {
+    // Safari fallback: send data as sequential numbered POST requests
+    // Update the displayed server command so the user copies the right command
+    serverHostCommand.value = getServerHostCommand({
+      pipingServerUrl: props.pipingServerUrl,
+      pipingServerHeaders: props.pipingServerHeaders,
+      csPath: props.csPath,
+      scPath: props.scPath,
+      sshServerPort: fragmentParams.sshServerPortForHint() ?? 22,
+      useChunkedUpload: true,
+    });
+    uploadWritable = createChunkedUploadWritable(csUrl, pipingServerHeaders);
+  }
+
   const getRes = await fetch(scUrl, {
     headers: pipingServerHeaders,
   });
   // TODO: status check
   const transport = {
     readable: getRes.body!,
-    writable: sendWritable,
+    writable: uploadWritable,
   };
   const originalTermWrite = term.write;
   // For fitting terminal

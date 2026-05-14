@@ -23,18 +23,8 @@
       <v-container v-if="!connecting">
         <v-row>
           <v-col>
-            <v-sheet v-if="!supportsRequestStreams">
-              <v-alert color="warning" :icon="mdiAlertCircle" variant="outlined" prominent border="top" style="margin-bottom: 2rem;">
-                <template v-slot:text>
-                  Sorry, this browser is not supported.<br>
-                  Use Google Chrome 105 or higher.<br>
-                  You can also use Microsoft Edge or other Chromium-based browsers.
-                </template>
-              </v-alert>
-            </v-sheet>
-
             <v-sheet min-height="70vh" rounded="lg" style="padding: 1rem">
-              <v-form @submit.prevent="connect" v-model="formValid" :disabled="!supportsRequestStreams">
+              <v-form @submit.prevent="connect" v-model="formValid">
                 <v-combobox label="Piping Server" v-model="pipingServerUrl" :items="pipingServerUrls" required variant="solo-filled" :rules="createRequiredRules('Piping Server')"></v-combobox>
                 <v-row>
                   <v-col>
@@ -74,7 +64,7 @@
                   <v-checkbox v-model="autoConnectForFragmentParams" label="Auto connect for configured URL"></v-checkbox>
                 </template>
 
-                <v-btn type="submit" :disabled="!formValid || !supportsRequestStreams" block class="mt-8" color="secondary">
+                <v-btn type="submit" :disabled="!formValid" block class="mt-8" color="secondary">
                   Connect
                 </v-btn>
 
@@ -165,7 +155,7 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, defineAsyncComponent, watch} from "vue";
 import {fragmentParams, getConfiguredUrl} from "@/fragment-params";
-import {mdiConsoleLine, mdiKey, mdiPlus, mdiAutoFix, mdiGithub, mdiClose, mdiFire, mdiCollapseAll, mdiExpandAll, mdiMinus, mdiEyeOff, mdiEye, mdiAlertCircle} from "@mdi/js";
+import {mdiConsoleLine, mdiKey, mdiPlus, mdiAutoFix, mdiGithub, mdiClose, mdiFire, mdiCollapseAll, mdiExpandAll, mdiMinus, mdiEyeOff, mdiEye} from "@mdi/js";
 import {AuthKeySet, storeAuthKeySet} from "@/authKeySets";
 import {getServerHostCommand} from "@/getServerHostCommand";
 import CopyToClipboardButton from "@/components/CopyToClipboardButton.vue";
@@ -249,6 +239,7 @@ const serverHostCommand = computed<string>(() => {
     csPath: csPath.value,
     scPath: scPath.value,
     sshServerPort: sshServerPortForCommandHint.value,
+    useChunkedUpload: !supportsRequestStreams.value,
   });
 });
 watch(serverHostCommand, () => {
