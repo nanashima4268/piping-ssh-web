@@ -9,10 +9,27 @@ type ToAsyncFunction<T extends (...args: any) => any> =
     ? (...args: P) => Promise<Awaited<ReturnType<T>>>
     : never;
 
+// Params for Safari path: uses MessagePorts instead of transferable streams.
+// The worker creates local WritableStream/ReadableStream from these ports.
+export type PortBasedDoSshParams = {
+  sendPort: MessagePort,
+  receivePort: MessagePort,
+  termReadable: ReadableStream<string>,
+  initialCols: number,
+  initialRows: number,
+  username: string,
+  messagePort: MessagePort,
+  authKeySets: Parameters<GoWasmExported["doSsh"]>[0]["authKeySets"],
+};
+
 export type GoWasmWorkerObject = {
   [P in keyof GoWasmExported]: ToAsyncFunction<GoWasmExported[P]>
 } & {
   existed(): Promise<boolean>,
+  doSshViaPort(
+    params: PortBasedDoSshParams,
+    functions: Parameters<GoWasmExported["doSsh"]>[1],
+  ): Promise<void>,
 };
 
 const goWasmWorkerObject: GoWasmWorkerObject = {
@@ -26,6 +43,39 @@ const goWasmWorkerObject: GoWasmWorkerObject = {
   async doSsh(params: Parameters<GoWasmExported["doSsh"]>[0], functions: Parameters<GoWasmExported["doSsh"]>[1]): Promise<void> {
     const exported = await goWasmExportedPromise;
     await exported.doSsh(params, functions);
+  },
+  // Safari fallback: build local streams from MessagePorts so no stream is ever transferred
+  async doSshViaPort(params: PortBasedDoSshParams, functions: Parameters<GoWasmExported["doSsh"]>[1]): Promise<void> {
+    const exported = await goWasmExportedPromise;
+
+    const writable = new WritableStream<Uint8Array>({
+      write(chunk: Uint8Array): void {
+        // Transfer ArrayBuffer zero-copy from worker → main thread
+        const buf = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength);
+        params.sendPort.postMessage(buf, [buf]);
+      },
+      close(): void { params.sendPort.postMessage(null); },
+      abort(): void { params.sendPort.postMessage(null); },
+    });
+
+    const readable = new ReadableStream<Uint8Array>({
+      start(ctrl: ReadableStreamDefaultController<Uint8Array>): void {
+        params.receivePort.onmessage = ({ data }: MessageEvent<ArrayBuffer | null>) => {
+          if (data === null) ctrl.close();
+          else ctrl.enqueue(new Uint8Array(data));
+        };
+      },
+    });
+
+    await exported.doSsh({
+      transport: { readable, writable },
+      termReadable: params.termReadable,
+      initialCols: params.initialCols,
+      initialRows: params.initialRows,
+      username: params.username,
+      messagePort: params.messagePort,
+      authKeySets: params.authKeySets,
+    }, functions);
   },
   async getAuthPublicKeyType(publicKey: string): Promise<string> {
     const exported = await goWasmExportedPromise;
