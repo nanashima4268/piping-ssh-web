@@ -1,8 +1,23 @@
 import urlJoin from "url-join";
 
+// Returns true if the URL indicates WebSocket direct-connection mode.
+export function isWebSocketUrl(url: string): boolean {
+  return /^wss?:\/\//i.test(url ?? "");
+}
+
 export function getServerHostCommand({pipingServerUrl, pipingServerHeaders, csPath, scPath, sshServerPort, useChunkedUpload}: {
   pipingServerUrl: string, pipingServerHeaders: Array<[string, string]>, csPath: string, scPath: string, sshServerPort: string | number, useChunkedUpload?: boolean
 }): string {
+  // WebSocket mode: user connects directly to a websockify server on the SSH host.
+  if (isWebSocketUrl(pipingServerUrl)) {
+    try {
+      const wsPort = new URL(pipingServerUrl).port || (pipingServerUrl.startsWith("wss") ? "443" : "80");
+      return `websockify ${wsPort} localhost:${sshServerPort}`;
+    } catch {
+      return `websockify <ws-port> localhost:${sshServerPort}`;
+    }
+  }
+
   const headerOptions = pipingServerHeaders.length === 0
     ? ""
     : " " + pipingServerHeaders.map(([name, value]) => `-H '${name}: ${value}'`).join(" ");
