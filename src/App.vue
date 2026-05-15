@@ -25,8 +25,8 @@
           <v-col>
             <v-sheet min-height="70vh" rounded="lg" style="padding: 1rem">
               <v-form @submit.prevent="connect" v-model="formValid">
-                <v-combobox :label="isWsMode ? 'WebSocket URL (ws:// or wss://)' : 'Piping Server'" v-model="pipingServerUrl" :items="pipingServerUrls" required variant="solo-filled" :rules="createRequiredRules('Piping Server')"></v-combobox>
-                <v-row v-if="!isWsMode">
+                <v-combobox label="Piping Server" v-model="pipingServerUrl" :items="pipingServerUrls" required variant="solo-filled" :rules="createRequiredRules('Piping Server')"></v-combobox>
+                <v-row>
                   <v-col>
                     <v-text-field label="client-server path" v-model="csPath" required variant="solo-filled" :rules="createRequiredRules('client-server path')"></v-text-field>
                   </v-col>
@@ -157,7 +157,7 @@ import {computed, onMounted, ref, defineAsyncComponent, watch} from "vue";
 import {fragmentParams, getConfiguredUrl} from "@/fragment-params";
 import {mdiConsoleLine, mdiKey, mdiPlus, mdiAutoFix, mdiGithub, mdiClose, mdiFire, mdiCollapseAll, mdiExpandAll, mdiMinus, mdiEyeOff, mdiEye} from "@mdi/js";
 import {AuthKeySet, storeAuthKeySet} from "@/authKeySets";
-import {getServerHostCommand, isWebSocketUrl} from "@/getServerHostCommand";
+import {getServerHostCommand} from "@/getServerHostCommand";
 import CopyToClipboardButton from "@/components/CopyToClipboardButton.vue";
 import {createRequiredRules} from "@/createRequiredRules";
 import DialogsForGlobal from "@/components/Globals/Globals.vue";
@@ -177,9 +177,6 @@ const pipingServerUrls = ref<string[]>([
   "https://ppng.io",
   "https://piping.nwtgck.repl.co",
 ]);
-
-// WebSocket mode: when URL starts with ws:// or wss://, connect directly via WebSocket.
-const isWsMode = computed<boolean>(() => isWebSocketUrl(pipingServerUrl.value ?? ""));
 const editingPipingServerHeaders = ref<Array<[string, string]>>(fragmentParams.pipingServerHeaders() ?? []);
 const pipingServerHeaders = computed<Array<[string, string]>>(() => {
   return editingPipingServerHeaders.value.filter(([name,value]) => name !== "");

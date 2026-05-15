@@ -30,7 +30,7 @@ import {AuthKeySet, storedAuthKeySets} from "@/authKeySets";
 import {aliveGoWasmWorkerRemotePromise, getAuthPublicKeyType, sshPrivateKeyIsEncrypted} from "@/go-wasm-using-worker";
 import {fragmentParams} from "@/fragment-params";
 import CopyToClipboardButton from "@/components/CopyToClipboardButton.vue";
-import {getServerHostCommand, isWebSocketUrl} from "@/getServerHostCommand";
+import {getServerHostCommand} from "@/getServerHostCommand";
 import {supportsRequestStreamsPromise} from "@/supportsRequestStreamsPromise";
 import {showPrompt} from "@/components/Globals/prompt/global-prompt";
 import {showSnackbar} from "@/components/Globals/snackbar/global-snackbar";
@@ -222,45 +222,7 @@ async function start() {
       },
     });
 
-    if (isWebSocketUrl(props.pipingServerUrl)) {
-      // WebSocket direct-connection mode: the piping server URL field is treated as a WS endpoint.
-      // Requires websockify (or websocat) running on the SSH server: websockify <port> localhost:22
-      const ws = new WebSocket(props.pipingServerUrl);
-      ws.binaryType = "arraybuffer";
-      await new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error("WebSocket connection failed"));
-      });
-
-      const sendMC = new MessageChannel();
-      const receiveMC = new MessageChannel();
-
-      sendMC.port1.onmessage = ({ data }: MessageEvent<ArrayBuffer | null>) => {
-        if (data === null) {
-          ws.close();
-        } else {
-          ws.send(data);
-        }
-      };
-      ws.onmessage = ({ data }: MessageEvent<ArrayBuffer | string>) => {
-        const buf: ArrayBuffer = data instanceof ArrayBuffer ? data : new TextEncoder().encode(data as string).buffer;
-        receiveMC.port1.postMessage(buf, [buf]);
-      };
-      ws.onclose = () => receiveMC.port1.postMessage(null);
-      ws.onerror = () => receiveMC.port1.postMessage(null);
-
-      const transfers: Transferable[] = [termReadable, sendMC.port2, receiveMC.port2, messageChannel.port2];
-      await worker.doSshViaPort(Comlink.transfer({
-        sendPort: sendMC.port2,
-        receivePort: receiveMC.port2,
-        termReadable,
-        initialRows: term.rows,
-        initialCols: term.cols,
-        username: props.username,
-        messagePort: messageChannel.port2,
-        authKeySets,
-      }, transfers), callbacks);
-    } else if (streamingSupported) {
+    if (streamingSupported) {
       // Chrome / Edge: stream keyboard data directly as one persistent POST
       const {readable: sendReadable, writable: sendWritable} = new TransformStream<Uint8Array>();
       // TODO: retry connection
