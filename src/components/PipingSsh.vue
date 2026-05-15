@@ -263,6 +263,22 @@ async function start() {
       const sendMC = new MessageChannel();
       // receiveMC: piping server body → main thread reads → receiveMC.port1 → receiveMC.port2 → worker
       const receiveMC = new MessageChannel();
+      // termMC: keyboard input → termMC.port1 → termMC.port2 → worker (avoids transferring ReadableStream)
+      const termMC = new MessageChannel();
+
+      // Pump keyboard events from termReadable into termMC so no ReadableStream is ever transferred
+      (async () => {
+        const reader = termReadable.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) { termMC.port1.postMessage(null); break; }
+            termMC.port1.postMessage(value);
+          }
+        } catch {
+          termMC.port1.postMessage(null);
+        }
+      })();
 
       let chunkIndex = 0;
       let postQueue: Promise<void> = Promise.resolve();
@@ -297,11 +313,11 @@ async function start() {
         }
       })();
 
-      const transfers: Transferable[] = [termReadable, sendMC.port2, receiveMC.port2, messageChannel.port2];
+      const transfers: Transferable[] = [sendMC.port2, receiveMC.port2, termMC.port2, messageChannel.port2];
       await worker.doSshViaPort(Comlink.transfer({
         sendPort: sendMC.port2,
         receivePort: receiveMC.port2,
-        termReadable,
+        termPort: termMC.port2,
         initialRows: term.rows,
         initialCols: term.cols,
         username: props.username,

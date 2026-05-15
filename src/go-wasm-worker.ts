@@ -11,10 +11,11 @@ type ToAsyncFunction<T extends (...args: any) => any> =
 
 // Params for Safari path: uses MessagePorts instead of transferable streams.
 // The worker creates local WritableStream/ReadableStream from these ports.
+// termPort replaces termReadable to avoid DataCloneError in Safari (ReadableStream is not transferable).
 export type PortBasedDoSshParams = {
   sendPort: MessagePort,
   receivePort: MessagePort,
-  termReadable: ReadableStream<string>,
+  termPort: MessagePort,
   initialCols: number,
   initialRows: number,
   username: string,
@@ -67,9 +68,20 @@ const goWasmWorkerObject: GoWasmWorkerObject = {
       },
     });
 
+    // Reconstruct termReadable from termPort — avoids DataCloneError on Safari
+    // (ReadableStream is not transferable in Safari < 16.4)
+    const termReadable = new ReadableStream<string>({
+      start(ctrl: ReadableStreamDefaultController<string>): void {
+        params.termPort.onmessage = ({ data }: MessageEvent<string | null>) => {
+          if (data === null) ctrl.close();
+          else ctrl.enqueue(data);
+        };
+      },
+    });
+
     await exported.doSsh({
       transport: { readable, writable },
-      termReadable: params.termReadable,
+      termReadable,
       initialCols: params.initialCols,
       initialRows: params.initialRows,
       username: params.username,
